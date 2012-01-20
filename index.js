@@ -6,11 +6,7 @@ var uglify = require("uglify-js");
 var jsp = uglify.parser;
 var pro = uglify.uglify;
 
-exports.minify = function (target, options) {
-  if ('object' !== typeof target) {
-    throw new Error('Invalid target definition');
-  }
-
+exports.minify = function (target, source_files, options) {
   options = options || {};
 
   if ("string" === typeof options.header) {
@@ -21,9 +17,9 @@ exports.minify = function (target, options) {
     options.header = "";
   }
 
-  file(target, function () {
+  file(target, source_files, function () {
     minifyHandler.apply(this, [options]);
-  }, true);
+  }, {async: true});
 };
 
 function minifyHandler(opts) {
