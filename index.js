@@ -1,4 +1,4 @@
-var Step = require('step');
+var $ = require('seq');
 var fs = require('fs');
 var path = require('path');
 var mkdirp = require('mkdirp');
@@ -6,66 +6,44 @@ var uglify = require("uglify-js");
 var jsp = uglify.parser;
 var pro = uglify.uglify;
 
-exports.minify = function (target, source_files, options) {
-  options = options || {};
-
-  if ("string" === typeof options.header) {
-    if (options.header.substr(-1) !== "\n") {
-      options.header += "\n";
-    }
-  } else {
-    options.header = "";
-  }
-
-  file(target, source_files, function () {
-    minifyHandler.apply(this, [options]);
-  }, {async: true});
-};
-
-function minifyHandler(opts) {
+exports.minify = function() {
+	console.log('MINIFYING: ' + this.name);
   var inputPaths = this.prereqs;
   var outputPath = this.name;
 
-  Step(
-    function readFiles(err) {
-      var group = this.group();
+	$(inputPaths)
+	.seqMap(function (src) {
+		loadAndMinify(src, this);
+	})
+	.unflatten()
+	.seq(function(uglified) {
+		this.vars.uglified = uglified;
+		var cb = this;
+		var dir = path.dirname(outputPath);
 
-      inputPaths.forEach(function (v) {
-        loadAndMinify(v, group());
-      });
-    },
-    function ensureOutputDirExists(err, data) {
-      var cb = this;
-      var dir = path.dirname(outputPath);
-
-      fs.stat(dir, function (err, stat) {
-        if (stat && stat.isDirectory()) {
-          cb(null, data);
-        } else {
-          // Target directory not found or not a directory,
-          // try to create it.
-          mkdirp(dir, 0755, cb.bind(null, null, data));
-        }
-      });
-    },
-    function writeResult(err, data) {
-      if (err) throw err;
-      var output = "" + opts.header + data.join(';\n') + '\n';
-
-      fs.writeFile(outputPath, output, this);
-    },
-    function handleErrors(err) {
-      if (err) {
-        console.error(err.stack ?
-                      err.stack :
-                      err.toString());
-      }
-
-      this();
-    },
-    // Jake callback
-    complete
-  );
+		fs.stat(dir, function (err, stat) {
+			if (stat && stat.isDirectory()) {
+				cb.ok();
+			} else {
+				// Target directory not found or not a directory,
+				// try to create it.
+				mkdirp(dir, 0755, function(err) {
+					if (err) cb(err);
+					else cb.ok();
+				});
+			}
+		})
+	})
+	.seq(function() {
+		var output = this.vars.uglified.join(';\n') + '\n';
+		fs.writeFile(outputPath, output, this);
+	})
+	.seq(complete)
+	.catch(function(err) {
+		if (err) {
+			fail(err.stack ?  err.stack : err.toString());
+		}
+	});
 };
 
 
@@ -76,13 +54,9 @@ function minifyHandler(opts) {
  */
 function loadAndMinify(filename, callback) {
   fs.readFile(filename, 'utf8', function (err, src) {
-    try {
-      if (err) throw err;
+		if (err) return callback(err);
 
-      var res = pro.gen_code(pro.ast_squeeze(pro.ast_mangle(jsp.parse(src))));
-      callback(null, res);
-    } catch (err) {
-      callback(err);
-    }
+		var res = pro.gen_code(pro.ast_squeeze(pro.ast_mangle(jsp.parse(src))));
+		callback(null, res);
   });
 };
